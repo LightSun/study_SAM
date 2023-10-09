@@ -26,7 +26,7 @@ bool parseDeviceName(const std::string& name, Sam::Parameter::Provider& provider
   }
   return false;
 }
-
+//医学图像微调： https://zhuanlan.zhihu.com/p/630529550
 int main(int argc, char** argv) {
   gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
   if (FLAGS_h) {
@@ -155,9 +155,11 @@ int main(int argc, char** argv) {
       if (points.empty() && nagativePoints.empty() && roi.empty()) {
         continue;
       }
-
-      cv::Mat mask = sam.getMask(points, nagativePoints, roi);
+      double iou;
+      cv::Mat mask = sam.getMask(points, nagativePoints, roi, &iou);
       SHOW_TIME
+
+      _LOG("mask.size = " << mask.size() << " ,iou = " << iou);
 
       // apply mask to image
       outImage = cv::Mat::zeros(image.size(), CV_8UC3);

@@ -9,6 +9,52 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
+#define _LOG(t) std::cout << t << std::endl;
+#define _GET_SHAPE_INFO(a, i) a->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo()
+
+static inline void _log_shapeInfo_0(const std::string& tag,
+                           Ort::TypeInfo& ti){
+    auto pre0_shape = ti.GetTensorTypeAndShapeInfo().GetShape();
+    //_LOG("after --- GetShape");
+    auto pre0_type = ti.GetTensorTypeAndShapeInfo().GetElementType();
+    //_LOG("after --- GetElementType");
+    //auto pre0_c = ti.GetTensorTypeAndShapeInfo().GetElementCount(); //may int overflow
+    //_LOG("after --- GetElementCount");
+    _LOG(tag << ": shape, type, count: ");
+    std::cout << "[";
+    for(size_t i = 0, size = pre0_shape.size() ; i < size ; ++i){
+        std::cout << pre0_shape[i];
+        if(i != size - 1){
+            std::cout << ",";
+        }
+    }
+    std::cout << "]";
+    std::cout << ", " << pre0_type;
+   // std::cout << ", " << pre0_c;
+}
+
+static inline void _log_shapeInfo(const std::string& tag,
+                           std::unique_ptr<Ort::Session>& se){
+    size_t c = se->GetInputCount();
+    if(c > 0){
+        for(size_t i = 0 ; i < c ; ++i){
+            _LOG("--------------------------- input i = " << i);
+            auto ti = se->GetInputTypeInfo(i);
+            _log_shapeInfo_0(tag + "_in", ti);
+            std::cout << std::endl;
+        }
+    }
+    c = se->GetOutputCount();
+    if(c > 0){
+        for(size_t i = 0 ; i < c ; ++i){
+            _LOG("--------------------------- output i = " << i);
+            auto ti = se->GetOutputTypeInfo(i);
+            _log_shapeInfo_0(tag + "_out", ti);
+            std::cout << std::endl;
+        }
+    }
+}
+
 struct SamModel {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "test"};
   Ort::SessionOptions sessionOptions[2];
@@ -88,14 +134,13 @@ struct SamModel {
 
     inputShapePre = sessionPre->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     outputShapePre = sessionPre->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-    //1 as float
-//    std::cout << "out_type: " << sessionPre->GetOutputTypeInfo(0)
-//                 .GetTensorTypeAndShapeInfo().GetElementType() << std::endl;
+    //sessionPre: input: 2 as uint8, output: 1 as float
+   // std::cout << "out_type: " << sessionPre->GetInputTypeInfo(0)
+    //             .GetTensorTypeAndShapeInfo().GetElementType() << std::endl;
     if (inputShapePre.size() != 4 || outputShapePre.size() != 4) {
       std::cerr << "Preprocessing model not loaded (invalid shape)" << std::endl;
       return;
     }
-
     if (bSamHQ) {
       intermShapePre = sessionSam->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
       if (intermShapePre.size() != 5) {
@@ -105,6 +150,10 @@ struct SamModel {
     }
 
     bModelLoaded = true;
+    {
+        _log_shapeInfo("pre", sessionPre);
+        _log_shapeInfo("sam", sessionSam);
+    }
   }
 
   cv::Size getInputSize() const {
@@ -123,7 +172,7 @@ struct SamModel {
       std::cerr << "Input is not a 3-channel image" << std::endl;
       return false;
     }
-
+    //int h = inputShapePre[2], w = inputShapePre[3]
     for (int i = 0; i < inputShapePre[2]; i++) {
       for (int j = 0; j < inputShapePre[3]; j++) {
         inputTensorValues[i * inputShapePre[3] + j] = image.at<cv::Vec3b>(i, j)[2];
@@ -135,7 +184,8 @@ struct SamModel {
     }
 
     auto inputTensor = Ort::Value::CreateTensor<uint8_t>(
-        memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShapePre.data(),
+        memoryInfo, inputTensorValues.data(),
+                inputTensorValues.size(), inputShapePre.data(),
         inputShapePre.size());
 
     std::vector<Ort::Value> outputTensors;
@@ -156,7 +206,8 @@ struct SamModel {
     }
 
     Ort::RunOptions run_options;
-    const char *inputNamesPre[] = {"input"}, *outputNamesPre[] = {"output", "interm_embeddings"};
+    const char *inputNamesPre[] = {"input"},
+            *outputNamesPre[] = {"output", "interm_embeddings"};
     sessionPre->Run(run_options, inputNamesPre, &inputTensor, 1, outputNamesPre,
                     outputTensors.data(), outputTensors.size());
 
